@@ -271,11 +271,9 @@ if kolom_belum_ada:
         "Jalankan ulang 2_mapping_kpr_kec.py dan tahap penggabungan data; "
         "pastikan kedua kolom ikut disimpan dalam file input preprocessing."
     )
-# Koreksi berbasis bukti sumber, sebelum deduplikasi dan parsing harga.
-# Dataset asli tidak ditimpa; semua perubahan dicatat.
-from audit_harga import audit_dan_koreksi
-
-df = audit_dan_koreksi(df, "output/audit")
+# Audit data terhadap deskripsi listing SUDAH dilakukan pada langkah 0 (0_audit_data.py),
+# sehingga data input di sini berasal dari file *_audit.csv. Jangan memanggil audit lagi di sini:
+# pemanggilan kedua akan menimpa log koreksi di output/audit dengan log yang hampir kosong.
 judul("DATA AWAL")
 print(f"Jumlah baris: {len(df)} | jumlah kolom: {df.shape[1]}")
 print("Kolom:", list(df.columns))
