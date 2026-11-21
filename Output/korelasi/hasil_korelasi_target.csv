@@ -1,13 +1,13 @@
 ﻿kolom,variabel,rho,p_value,kekuatan,arah,uji (alpha=0.05)
-luas bangunan,Luas Bangunan,0.8766767829932409,0.0,Sangat kuat,Positif,Signifikan
-luas tanah,Luas Tanah,0.8384421121556194,0.0,Sangat kuat,Positif,Signifikan
-daya listrik,Daya Listrik,0.7322693757858046,0.0,Kuat,Positif,Signifikan
-kamar mandi,Kamar Mandi,0.6532704955466313,0.0,Kuat,Positif,Signifikan
-kamar tidur,Kamar Tidur,0.6043530691942882,0.0,Kuat,Positif,Signifikan
-jumlah lantai,Jumlah Lantai,0.30092240939533327,2.0843160641613808e-111,Rendah,Positif,Signifikan
-Nilai Tanah Zona,Nilai Tanah Zona,0.2878093681129749,2.5625715262856356e-109,Rendah,Positif,Signifikan
-Jumlah Penduduk,Jumlah Penduduk,-0.17560989146246625,9.07415583776669e-41,Sangat rendah,Negatif,Signifikan
-lebar jalan,Lebar Jalan Depan,0.06611224365536954,5.742544012924742e-07,Sangat rendah,Positif,Signifikan
-Tahun,Tahun,0.053632316428185244,5.026805029332139e-05,Sangat rendah,Positif,Signifikan
-UMK,UMK,0.053632316428185244,5.026805029332139e-05,Sangat rendah,Positif,Signifikan
-Inflasi y-o-y,Inflasi,0.052984310764711925,6.193322770147849e-05,Sangat rendah,Positif,Signifikan
+luas bangunan,Luas Bangunan,0.8781810792661228,0.0,Sangat kuat,Positif,Signifikan
+luas tanah,Luas Tanah,0.8402661853373086,0.0,Sangat kuat,Positif,Signifikan
+daya listrik,Daya Listrik,0.7181519543314688,0.0,Kuat,Positif,Signifikan
+kamar mandi,Kamar Mandi,0.6543148866342986,0.0,Kuat,Positif,Signifikan
+kamar tidur,Kamar Tidur,0.6085943989453624,0.0,Kuat,Positif,Signifikan
+jumlah lantai,Jumlah Lantai,0.30969420724038144,1.1263405653856157e-120,Rendah,Positif,Signifikan
+Nilai Tanah Zona,Nilai Tanah Zona,0.2892078585250598,4.548322023165151e-110,Rendah,Positif,Signifikan
+Jumlah Penduduk,Jumlah Penduduk,-0.17583858639930924,9.504022028174837e-41,Sangat rendah,Negatif,Signifikan
+lebar jalan,Lebar Jalan Depan,0.06554208071072971,7.473165763770852e-07,Sangat rendah,Positif,Signifikan
+Tahun,Tahun,0.05335178060966509,5.654742129443418e-05,Sangat rendah,Positif,Signifikan
+UMK,UMK,0.05335178060966509,5.654742129443418e-05,Sangat rendah,Positif,Signifikan
+Inflasi y-o-y,Inflasi,0.052667453849203974,7.036411768409551e-05,Sangat rendah,Positif,Signifikan
