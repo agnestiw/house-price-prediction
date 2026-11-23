@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import joblib
@@ -11,6 +12,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     mean_absolute_error,
     mean_absolute_percentage_error,
+    make_scorer,
     mean_squared_error,
     r2_score,
 )
@@ -27,8 +29,14 @@ from lightgbm import LGBMRegressor
 # ===========================================================================
 
 SEED = 42
-N_ITER = 100
+N_ITER = int(os.environ.get("N_ITER", 100))   # ubah lewat variabel lingkungan hanya untuk uji cepat
 FOLDS = 5
+N_BOOTSTRAP = 2000   # jumlah resampling untuk interval kepercayaan R² data uji
+
+# Metrik untuk MEMILIH parameter saat tuning (bukan metrik laporan akhir):
+#   "r2_log"    : R² pada skala log1p(harga) (pada uji saya tidak konsisten lebih baik)
+#   "r2_rupiah" : R² pada skala Rupiah (perilaku skrip sebelumnya)
+SCORING_TUNING = "r2_rupiah"
 
 # Jumlah proses paralel untuk pencarian parameter.
 # Gunakan 1 atau 2 jika penggunaan RAM terlalu besar.
@@ -91,6 +99,9 @@ def hitung_metrik(aktual, prediksi):
 
     return {
         "R2": float(r2_score(aktual, prediksi)),
+        "R2_log": float(
+            r2_score(np.log1p(aktual), np.log1p(np.clip(prediksi, 0, None)))
+        ),
         "MAE": float(mean_absolute_error(aktual, prediksi)),
         "RMSE": float(np.sqrt(mean_squared_error(aktual, prediksi))),
         "MAPE": float(
@@ -119,12 +130,43 @@ def tabel_prediksi(ids, aktual, prediksi, fold=None):
     return hasil
 
 
+def r2_skala_log(aktual, prediksi):
+    """R² pada skala log1p(harga); prediksi model tetap dalam Rupiah."""
+    return r2_score(
+        np.log1p(np.asarray(aktual, dtype=float)),
+        np.log1p(np.clip(np.asarray(prediksi, dtype=float), 0, None)),
+    )
+
+
+def pilih_scoring():
+    if SCORING_TUNING == "r2_log":
+        return make_scorer(r2_skala_log)
+    if SCORING_TUNING == "r2_rupiah":
+        return "r2"
+    raise ValueError("SCORING_TUNING harus 'r2_log' atau 'r2_rupiah'.")
+
+
+def interval_bootstrap_r2(aktual, prediksi, n=N_BOOTSTRAP, seed=SEED):
+    """Interval kepercayaan 95% untuk R² data uji (resampling baris data uji)."""
+    aktual = np.asarray(aktual, dtype=float)
+    prediksi = np.asarray(prediksi, dtype=float)
+    rng = np.random.default_rng(seed)
+    nilai = []
+
+    for _ in range(n):
+        idx = rng.integers(0, len(aktual), len(aktual))
+        nilai.append(r2_score(aktual[idx], prediksi[idx]))
+
+    bawah, atas = np.percentile(nilai, [2.5, 97.5])
+    return float(bawah), float(atas)
+
+
 def buat_search(pipeline, ruang_parameter, splits):
     return RandomizedSearchCV(
         estimator=pipeline,
         param_distributions=ruang_parameter,
         n_iter=N_ITER,
-        scoring="r2",
+        scoring=pilih_scoring(),
         cv=splits,
         refit=True,
         random_state=SEED,
@@ -303,6 +345,23 @@ def konfigurasi_model():
     }
 
 
+def konfigurasi_baseline():
+    """Model dengan parameter bawaan pustaka, sebagai pembanding sebelum tuning."""
+    return {
+        "Random Forest": RandomForestRegressor(random_state=SEED, n_jobs=1),
+        "XGBoost": XGBRegressor(
+            objective="reg:squarederror",
+            random_state=SEED,
+            n_jobs=1,
+        ),
+        "LightGBM": LGBMRegressor(
+            random_state=SEED,
+            n_jobs=1,
+            verbosity=-1,
+        ),
+    }
+
+
 # ===========================================================================
 # 5. PROSES UTAMA
 # ===========================================================================
@@ -407,6 +466,8 @@ def main():
 
     results = []
     cv_summary = []
+    baseline_rows = []
+    ci_test = {}
 
     for name, (estimator, params) in konfigurasi_model().items():
         judul(f"MODEL: {name}")
@@ -635,6 +696,8 @@ def main():
             })
 
             if label == "Testing":
+                ci_test[name] = interval_bootstrap_r2(yy, pred)
+
                 tabel_prediksi(
                     test[GROUP],
                     yy,
@@ -646,6 +709,45 @@ def main():
                     OUT / f"{name}_prediksi.csv",
                     index=False,
                 )
+
+        # ---------------------------------------------------------------
+        # E. BASELINE: PARAMETER BAWAAN PUSTAKA (PEMBANDING SEBELUM TUNING)
+        # Preprocessing, transformasi target, dan outer fold sama dengan model tuned.
+        # ---------------------------------------------------------------
+
+        baseline = Pipeline([
+            ("pre", clone(preprocessor)),
+            (
+                "model",
+                TransformedTargetRegressor(
+                    regressor=konfigurasi_baseline()[name],
+                    func=np.log1p,
+                    inverse_func=np.expm1,
+                ),
+            ),
+        ])
+
+        oof_baseline = np.full(len(X), np.nan)
+
+        for idx_train, idx_valid in outer_splits:
+            model_fold = clone(baseline)
+            model_fold.fit(X.iloc[idx_train], y.iloc[idx_train])
+            oof_baseline[idx_valid] = model_fold.predict(X.iloc[idx_valid])
+
+        oof_base = hitung_metrik(y, oof_baseline)
+
+        baseline.fit(X, y)
+        test_base = hitung_metrik(yt, baseline.predict(Xt))
+
+        baseline_rows.append({
+            "Model": name,
+            "R2_OOF_baseline": oof_base["R2"],
+            "R2_log_OOF_baseline": oof_base["R2_log"],
+            "R2_test_baseline": test_base["R2"],
+            "R2_log_test_baseline": test_base["R2_log"],
+            "MAE_test_baseline": test_base["MAE"],
+            "RMSE_test_baseline": test_base["RMSE"],
+        })
 
     # ===================================================================
     # 6. RINGKASAN SELURUH MODEL
@@ -687,6 +789,65 @@ def main():
             index=False,
             float_format=lambda value: f"{value:.6f}",
         )
+    )
+
+    judul("TABEL EVALUASI UTAMA (DATA UJI, MODEL SETELAH TUNING)")
+
+    uji = evaluation[evaluation["Data"] == "Testing"].copy()
+    uji["R2_CI95_bawah"] = uji["Model"].map(lambda m: ci_test[m][0])
+    uji["R2_CI95_atas"] = uji["Model"].map(lambda m: ci_test[m][1])
+    utama = uji[[
+        "Model", "R2", "MAE", "RMSE", "MAPE",
+        "R2_log", "R2_CI95_bawah", "R2_CI95_atas",
+    ]]
+    utama.to_csv(OUT / "evaluasi_utama.csv", index=False)
+
+    print(
+        utama.to_string(
+            index=False,
+            float_format=lambda value: f"{value:,.4f}",
+        )
+    )
+    print(
+        "\nR2, MAE, RMSE, MAPE dihitung pada data uji dalam Rupiah."
+        "\nR2_log = R² pada skala log1p(harga) (metrik tambahan)."
+        "\nR2_CI95 = interval kepercayaan 95% (bootstrap) untuk R2 data uji."
+    )
+
+    judul("PERBANDINGAN BASELINE (PARAMETER BAWAAN) DAN TUNED")
+
+    banding = pd.DataFrame(baseline_rows).merge(
+        summary[["Model", "R2_OOF"]].rename(columns={"R2_OOF": "R2_OOF_tuned"}),
+        on="Model",
+    ).merge(
+        uji[["Model", "R2", "R2_log"]].rename(columns={
+            "R2": "R2_test_tuned",
+            "R2_log": "R2_log_test_tuned",
+        }),
+        on="Model",
+    )
+    banding["selisih_R2_OOF"] = (
+        banding["R2_OOF_tuned"] - banding["R2_OOF_baseline"]
+    )
+    banding["selisih_R2_test"] = (
+        banding["R2_test_tuned"] - banding["R2_test_baseline"]
+    )
+    banding["selisih_R2_log_test"] = (
+        banding["R2_log_test_tuned"] - banding["R2_log_test_baseline"]
+    )
+    banding.to_csv(OUT / "perbandingan_baseline_tuned.csv", index=False)
+
+    print(
+        banding[[
+            "Model",
+            "R2_OOF_baseline", "R2_OOF_tuned", "selisih_R2_OOF",
+            "R2_test_baseline", "R2_test_tuned", "selisih_R2_test",
+            "R2_log_test_baseline", "R2_log_test_tuned", "selisih_R2_log_test",
+        ]].to_string(index=False, float_format=lambda value: f"{value:.4f}")
+    )
+    print(
+        "\nSelisih positif berarti tuning memperbaiki model terhadap parameter bawaan."
+        "\nR2_OOF berasal dari nested CV (lebih stabil); R2_test dari satu pembagian data uji."
     )
 
     judul("SELISIH R² TRAINING DAN TESTING")
