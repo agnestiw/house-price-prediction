@@ -1,4 +1,3 @@
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -10,7 +9,6 @@ INPUT_TRAIN  = "output/data_train.csv"   # hasil 5_data_split.py
 INPUT_TEST   = "output/data_test.csv"
 OUTPUT_TRAIN = "output/normalisasi/data_train_normalisasi.csv"
 OUTPUT_TEST  = "output/normalisasi/data_test_normalisasi.csv"
-OUTPUT_SCALER = "output/normalisasi/scaler_minmax.pkl"
 
 TARGET = "harga"
 KOLOM_NORMALISASI = [
@@ -102,5 +100,4 @@ else:
 # ===========================================================================
 train.to_csv(OUTPUT_TRAIN, index=False, encoding="utf-8-sig")
 test.to_csv(OUTPUT_TEST, index=False, encoding="utf-8-sig")
-joblib.dump({"scaler": scaler, "kolom": kolom}, OUTPUT_SCALER)
-print(f"\nTersimpan: {OUTPUT_TRAIN}, {OUTPUT_TEST}, {OUTPUT_SCALER}")
+print(f"\nTersimpan: {OUTPUT_TRAIN}, {OUTPUT_TEST}")

@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 
 import joblib
@@ -38,6 +39,15 @@ N_BOOTSTRAP = 2000   # jumlah resampling untuk interval kepercayaan R² data uji
 #   "r2_rupiah" : R² pada skala Rupiah (perilaku skrip sebelumnya)
 SCORING_TUNING = "r2_rupiah"
 
+# False : hanya menyimpan 3 file model (.pkl) dan 1 file ringkasan hasil_evaluasi.csv.
+# True  : juga menyimpan file rincian (fold, OOF, tuning, prediksi data uji)
+#         ke folder output/pemodelan/detail.
+SIMPAN_DETAIL = False
+
+# Pesan peringatan "ruang parameter lebih kecil dari n_iter" tidak memengaruhi hasil
+# (pencarian otomatis menjalankan semua kombinasi), sehingga disembunyikan.
+warnings.filterwarnings("ignore", message="The total space of parameters")
+
 # Jumlah proses paralel untuk pencarian parameter.
 # Gunakan 1 atau 2 jika penggunaan RAM terlalu besar.
 N_JOBS_SEARCH = -1
@@ -45,6 +55,7 @@ N_JOBS_SEARCH = -1
 INPUT_TRAIN = Path("output/data_train.csv")
 INPUT_TEST = Path("output/data_test.csv")
 OUT = Path("output/pemodelan")
+DETAIL = OUT / "detail"
 
 TARGET = "harga"
 GROUP = "property_id"
@@ -369,6 +380,9 @@ def konfigurasi_baseline():
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
+    if SIMPAN_DETAIL:
+        DETAIL.mkdir(parents=True, exist_ok=True)
+
     train, test, features, categorical, numeric = baca_data()
 
     X = train[features].copy()
@@ -455,14 +469,15 @@ def main():
     for fold, (_, idx_valid) in enumerate(outer_splits, start=1):
         fold_assignment[idx_valid] = fold
 
-    pd.DataFrame({
-        "property_id": groups.to_numpy(),
-        "harga": y.to_numpy(),
-        "outer_fold": fold_assignment,
-    }).to_csv(
-        OUT / "pembagian_outer_fold.csv",
-        index=False,
-    )
+    if SIMPAN_DETAIL:
+        pd.DataFrame({
+            "property_id": groups.to_numpy(),
+            "harga": y.to_numpy(),
+            "outer_fold": fold_assignment,
+        }).to_csv(
+            DETAIL / "pembagian_outer_fold.csv",
+            index=False,
+        )
 
     results = []
     cv_summary = []
@@ -553,42 +568,43 @@ def main():
                 flush=True,
             )
 
-            # Simpan semua prediksi fold, terbesar error-nya di atas.
-            detail = tabel_prediksi(
-                groups.iloc[idx_valid],
-                y.iloc[idx_valid],
-                pred_valid,
-                fold=fold,
-            )
-
-            detail.sort_values(
-                "error_kuadrat",
-                ascending=False,
-            ).to_csv(
-                OUT / f"{name}_fold_{fold}_prediksi.csv",
-                index=False,
-            )
+            if SIMPAN_DETAIL:
+                # Simpan semua prediksi fold, terbesar error-nya di atas.
+                tabel_prediksi(
+                    groups.iloc[idx_valid],
+                    y.iloc[idx_valid],
+                    pred_valid,
+                    fold=fold,
+                ).sort_values(
+                    "error_kuadrat",
+                    ascending=False,
+                ).to_csv(
+                    DETAIL / f"{name}_fold_{fold}_prediksi.csv",
+                    index=False,
+                )
 
         folds = pd.DataFrame(fold_rows)
 
-        folds.to_csv(
-            OUT / f"{name}_nested_cv.csv",
-            index=False,
-        )
+        if SIMPAN_DETAIL:
+            folds.to_csv(
+                DETAIL / f"{name}_nested_cv.csv",
+                index=False,
+            )
 
         # Setiap baris training diprediksi satu kali ketika menjadi
         # outer validation: prediksi out-of-fold (OOF).
         oof_metrics = hitung_metrik(y, oof_predictions)
 
-        tabel_prediksi(
-            groups,
-            y,
-            oof_predictions,
-            fold=fold_assignment,
-        ).to_csv(
-            OUT / f"{name}_oof_prediksi.csv",
-            index=False,
-        )
+        if SIMPAN_DETAIL:
+            tabel_prediksi(
+                groups,
+                y,
+                oof_predictions,
+                fold=fold_assignment,
+            ).to_csv(
+                DETAIL / f"{name}_oof_prediksi.csv",
+                index=False,
+            )
 
         cv_summary.append({
             "Model": name,
@@ -634,10 +650,11 @@ def main():
             "pengganti hasil nested CV."
         )
 
-        pd.DataFrame(final_search.cv_results_).to_csv(
-            OUT / f"{name}_tuning.csv",
-            index=False,
-        )
+        if SIMPAN_DETAIL:
+            pd.DataFrame(final_search.cv_results_).to_csv(
+                DETAIL / f"{name}_tuning.csv",
+                index=False,
+            )
 
         # ---------------------------------------------------------------
         # C. SIMPAN SATU BUNDLE UNTUK SETIAP ALGORITMA
@@ -698,17 +715,18 @@ def main():
             if label == "Testing":
                 ci_test[name] = interval_bootstrap_r2(yy, pred)
 
-                tabel_prediksi(
-                    test[GROUP],
-                    yy,
-                    pred,
-                ).sort_values(
-                    "error_kuadrat",
-                    ascending=False,
-                ).to_csv(
-                    OUT / f"{name}_prediksi.csv",
-                    index=False,
-                )
+                if SIMPAN_DETAIL:
+                    tabel_prediksi(
+                        test[GROUP],
+                        yy,
+                        pred,
+                    ).sort_values(
+                        "error_kuadrat",
+                        ascending=False,
+                    ).to_csv(
+                        DETAIL / f"{name}_prediksi.csv",
+                        index=False,
+                    )
 
         # ---------------------------------------------------------------
         # E. BASELINE: PARAMETER BAWAAN PUSTAKA (PEMBANDING SEBELUM TUNING)
@@ -759,14 +777,15 @@ def main():
     )
     evaluation = pd.DataFrame(results)
 
-    summary.to_csv(
-        OUT / "ringkasan_nested_cv.csv",
-        index=False,
-    )
-    evaluation.to_csv(
-        OUT / "evaluasi.csv",
-        index=False,
-    )
+    if SIMPAN_DETAIL:
+        summary.to_csv(
+            DETAIL / "ringkasan_nested_cv.csv",
+            index=False,
+        )
+        evaluation.to_csv(
+            DETAIL / "evaluasi.csv",
+            index=False,
+        )
 
     judul("RINGKASAN NESTED CROSS-VALIDATION")
 
@@ -800,7 +819,6 @@ def main():
         "Model", "R2", "MAE", "RMSE", "MAPE",
         "R2_log", "R2_CI95_bawah", "R2_CI95_atas",
     ]]
-    utama.to_csv(OUT / "evaluasi_utama.csv", index=False)
 
     print(
         utama.to_string(
@@ -835,7 +853,10 @@ def main():
     banding["selisih_R2_log_test"] = (
         banding["R2_log_test_tuned"] - banding["R2_log_test_baseline"]
     )
-    banding.to_csv(OUT / "perbandingan_baseline_tuned.csv", index=False)
+
+    # Satu file ringkasan untuk Bab 4: metrik utama data uji + perbandingan baseline.
+    hasil_evaluasi = utama.merge(banding, on="Model", how="left")
+    hasil_evaluasi.to_csv(OUT / "hasil_evaluasi.csv", index=False)
 
     print(
         banding[[
