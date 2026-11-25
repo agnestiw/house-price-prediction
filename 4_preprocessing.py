@@ -74,10 +74,7 @@ ISI_MODUS = ["sertifikat", "daya listrik"]
 ISI_TIDAK_DIKETAHUI = {
     "lebar jalan": "Tidak Diketahui",
     "KPR": "Tidak Diketahui",
-    "kondisi bangunan": "tidak diketahui",
-    "tipe lingkungan": "tidak diketahui",
 }
-KOLOM_FITUR_BARU = ["kondisi bangunan", "tipe lingkungan"]
 HAPUS_JIKA_KOSONG = ["harga", "kecamatan"]
 KOLOM_BILANGAN_BULAT = ["kamar tidur", "kamar mandi", "jumlah lantai"]  # median dibulatkan
 # d. label encoding (kamus pemetaan)
@@ -125,15 +122,11 @@ ENCODING = {
     "KPR": {"Tidak Diketahui": 0, "Tidak": 1, "Bisa": 2},
     "kecamatan": {k: i for i, k in enumerate(KECAMATAN_SURABAYA)},
     "Wilayah": {w: i for i, w in enumerate(WILAYAH_SURABAYA)},
-    "kondisi bangunan": {"tidak diketahui": 0, "lama": 1, "baru": 2},
-    "tipe lingkungan": {"tidak diketahui": 0, "kampung": 1, "perumahan": 2},
     # "lebar jalan" di-encode dari angka jumlah mobil (lihat encode_lebar_jalan)
 }
 # Nilai di luar kamus menggunakan kategori cadangan dan dilaporkan di terminal.
 DEFAULT_ENCODING = {
     "sertifikat": "Lainnya",
-    "kondisi bangunan": "tidak diketahui",
-    "tipe lingkungan": "tidak diketahui",
 }
 # penulisan lain di data -> kategori pada kamus encoding (huruf kecil)
 ALIAS_ENCODING = {
@@ -264,13 +257,6 @@ for nama in set(
     if asli and asli != nama:
         peta_nama[asli] = nama
 df = df.rename(columns=peta_nama)
-kolom_belum_ada = [kol for kol in KOLOM_FITUR_BARU if kol not in df.columns]
-if kolom_belum_ada:
-    raise ValueError(
-        f"Kolom fitur baru belum tersedia: {kolom_belum_ada}. "
-        "Jalankan ulang 2_mapping_kpr_kec.py dan tahap penggabungan data; "
-        "pastikan kedua kolom ikut disimpan dalam file input preprocessing."
-    )
 # Audit data terhadap deskripsi listing SUDAH dilakukan pada langkah 0 (0_audit_data.py),
 # sehingga data input di sini berasal dari file *_audit.csv. Jangan memanggil audit lagi di sini:
 # pemanggilan kedua akan menimpa log koreksi di output/audit dengan log yang hampir kosong.

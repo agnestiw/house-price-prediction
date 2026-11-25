@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 
-INPUT_RUMAH     = "output/hasil-mapping-kpr-kecamatan.csv"
+INPUT_RUMAH     = "output/hasil-mapping.csv"
 INPUT_EKSTERNAL = "dataset_eksternal.csv"
 OUTPUT          = "output/hasil-merge-internal-eksternal.csv"
 

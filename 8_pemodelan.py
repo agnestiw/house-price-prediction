@@ -13,7 +13,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     mean_absolute_error,
     mean_absolute_percentage_error,
-    make_scorer,
     mean_squared_error,
     r2_score,
 )
@@ -33,11 +32,6 @@ SEED = 42
 N_ITER = int(os.environ.get("N_ITER", 100))   # ubah lewat variabel lingkungan hanya untuk uji cepat
 FOLDS = 5
 N_BOOTSTRAP = 2000   # jumlah resampling untuk interval kepercayaan R² data uji
-
-# Metrik untuk MEMILIH parameter saat tuning (bukan metrik laporan akhir):
-#   "r2_log"    : R² pada skala log1p(harga) (pada uji saya tidak konsisten lebih baik)
-#   "r2_rupiah" : R² pada skala Rupiah (perilaku skrip sebelumnya)
-SCORING_TUNING = "r2_rupiah"
 
 # False : hanya menyimpan 3 file model (.pkl) dan 1 file ringkasan hasil_evaluasi.csv.
 # True  : juga menyimpan file rincian (fold, OOF, tuning, prediksi data uji)
@@ -66,23 +60,7 @@ KOLOM_KATEGORIKAL = [
     "sertifikat",
     "KPR",
     "lebar jalan",
-    "kondisi bangunan",
-    "tipe lingkungan",
 ]
-
-# Harus sama dengan pemetaan pada 4_preprocessing.py.
-ENCODING_FITUR_BARU = {
-    "kondisi bangunan": {
-        "tidak diketahui": 0,
-        "lama": 1,
-        "baru": 2,
-    },
-    "tipe lingkungan": {
-        "tidak diketahui": 0,
-        "kampung": 1,
-        "perumahan": 2,
-    },
-}
 
 NAMA_FILE_MODEL = {
     "Random Forest": "model_random_forest.pkl",
@@ -110,9 +88,6 @@ def hitung_metrik(aktual, prediksi):
 
     return {
         "R2": float(r2_score(aktual, prediksi)),
-        "R2_log": float(
-            r2_score(np.log1p(aktual), np.log1p(np.clip(prediksi, 0, None)))
-        ),
         "MAE": float(mean_absolute_error(aktual, prediksi)),
         "RMSE": float(np.sqrt(mean_squared_error(aktual, prediksi))),
         "MAPE": float(
@@ -141,22 +116,6 @@ def tabel_prediksi(ids, aktual, prediksi, fold=None):
     return hasil
 
 
-def r2_skala_log(aktual, prediksi):
-    """R² pada skala log1p(harga); prediksi model tetap dalam Rupiah."""
-    return r2_score(
-        np.log1p(np.asarray(aktual, dtype=float)),
-        np.log1p(np.clip(np.asarray(prediksi, dtype=float), 0, None)),
-    )
-
-
-def pilih_scoring():
-    if SCORING_TUNING == "r2_log":
-        return make_scorer(r2_skala_log)
-    if SCORING_TUNING == "r2_rupiah":
-        return "r2"
-    raise ValueError("SCORING_TUNING harus 'r2_log' atau 'r2_rupiah'.")
-
-
 def interval_bootstrap_r2(aktual, prediksi, n=N_BOOTSTRAP, seed=SEED):
     """Interval kepercayaan 95% untuk R² data uji (resampling baris data uji)."""
     aktual = np.asarray(aktual, dtype=float)
@@ -177,7 +136,7 @@ def buat_search(pipeline, ruang_parameter, splits):
         estimator=pipeline,
         param_distributions=ruang_parameter,
         n_iter=N_ITER,
-        scoring=pilih_scoring(),
+        scoring="r2",
         cv=splits,
         refit=True,
         random_state=SEED,
@@ -195,7 +154,7 @@ def baca_data():
     train = pd.read_csv(INPUT_TRAIN, dtype={GROUP: "string"})
     test = pd.read_csv(INPUT_TEST, dtype={GROUP: "string"})
 
-    wajib = {TARGET, GROUP, *ENCODING_FITUR_BARU}
+    wajib = {TARGET, GROUP}
 
     for label, data in [("Training", train), ("Testing", test)]:
         hilang = wajib - set(data.columns)
@@ -267,22 +226,6 @@ def baca_data():
                 raise ValueError(
                     f"{label}: kolom '{kol}' mengandung infinity."
                 )
-
-        for kol, pemetaan in ENCODING_FITUR_BARU.items():
-            # Nilai kosong pada fitur baru berarti tidak diketahui.
-            data[kol] = data[kol].fillna(pemetaan["tidak diketahui"])
-
-            kode_valid = set(pemetaan.values())
-            tidak_valid = ~data[kol].isin(kode_valid)
-
-            if tidak_valid.any():
-                contoh = data.loc[tidak_valid, kol].unique().tolist()
-                raise ValueError(
-                    f"{label}: kode '{kol}' tidak valid: {contoh}. "
-                    f"Kode yang diperbolehkan: {sorted(kode_valid)}."
-                )
-
-            data[kol] = data[kol].astype(int)
 
     irisan = set(train[GROUP]) & set(test[GROUP])
 
@@ -666,7 +609,7 @@ def main():
             "fitur": features,
             "fitur_kategorikal": categorical,
             "fitur_numerik": numeric,
-            "encoding_fitur_baru": ENCODING_FITUR_BARU,
+            "encoding_fitur_baru": {},   # tidak dipakai lagi; dipertahankan agar struktur bundle sama
             "log_target": False,
             "target_transform_internal": "log1p/expm1",
             "input": (
@@ -760,9 +703,7 @@ def main():
         baseline_rows.append({
             "Model": name,
             "R2_OOF_baseline": oof_base["R2"],
-            "R2_log_OOF_baseline": oof_base["R2_log"],
             "R2_test_baseline": test_base["R2"],
-            "R2_log_test_baseline": test_base["R2_log"],
             "MAE_test_baseline": test_base["MAE"],
             "RMSE_test_baseline": test_base["RMSE"],
         })
@@ -817,7 +758,7 @@ def main():
     uji["R2_CI95_atas"] = uji["Model"].map(lambda m: ci_test[m][1])
     utama = uji[[
         "Model", "R2", "MAE", "RMSE", "MAPE",
-        "R2_log", "R2_CI95_bawah", "R2_CI95_atas",
+        "R2_CI95_bawah", "R2_CI95_atas",
     ]]
 
     print(
@@ -828,7 +769,6 @@ def main():
     )
     print(
         "\nR2, MAE, RMSE, MAPE dihitung pada data uji dalam Rupiah."
-        "\nR2_log = R² pada skala log1p(harga) (metrik tambahan)."
         "\nR2_CI95 = interval kepercayaan 95% (bootstrap) untuk R2 data uji."
     )
 
@@ -838,10 +778,7 @@ def main():
         summary[["Model", "R2_OOF"]].rename(columns={"R2_OOF": "R2_OOF_tuned"}),
         on="Model",
     ).merge(
-        uji[["Model", "R2", "R2_log"]].rename(columns={
-            "R2": "R2_test_tuned",
-            "R2_log": "R2_log_test_tuned",
-        }),
+        uji[["Model", "R2"]].rename(columns={"R2": "R2_test_tuned"}),
         on="Model",
     )
     banding["selisih_R2_OOF"] = (
@@ -849,9 +786,6 @@ def main():
     )
     banding["selisih_R2_test"] = (
         banding["R2_test_tuned"] - banding["R2_test_baseline"]
-    )
-    banding["selisih_R2_log_test"] = (
-        banding["R2_log_test_tuned"] - banding["R2_log_test_baseline"]
     )
 
     # Satu file ringkasan untuk Bab 4: metrik utama data uji + perbandingan baseline.
@@ -863,7 +797,6 @@ def main():
             "Model",
             "R2_OOF_baseline", "R2_OOF_tuned", "selisih_R2_OOF",
             "R2_test_baseline", "R2_test_tuned", "selisih_R2_test",
-            "R2_log_test_baseline", "R2_log_test_tuned", "selisih_R2_log_test",
         ]].to_string(index=False, float_format=lambda value: f"{value:.4f}")
     )
     print(

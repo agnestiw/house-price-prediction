@@ -4,7 +4,7 @@ import pandas as pd
 
 INPUT = "output/rumah123_surabaya_2024-2026.csv"
 OUTPUT = (
-    "output/hasil-mapping-kpr-kecamatan.csv"  # mapping & ringkasan hanya ditampilkan di terminal
+    "output/hasil-mapping.csv"  # mapping & ringkasan hanya ditampilkan di terminal
 )
 # ===========================================================================
 # 1. REFERENSI WILAYAH ADMINISTRASI KOTA SURABAYA
@@ -630,60 +630,8 @@ def tentukan_lokasi(lokasi, judul, link):
 
 
 # ===========================================================================
-# 6. KLASIFIKASI KONDISI BANGUNAN, TIPE LINGKUNGAN, DAN KPR
+# 6. KLASIFIKASI KPR
 # ===========================================================================
-# Klasifikasi berbasis petunjuk eksplisit, bukan harga/luas rumah.
-# Kondisi tanpa bukti diberi "tidak diketahui", bukan otomatis dianggap lama.
-def teks_fitur(value):
-    if pd.isna(value):
-        return ""
-    return re.sub(r"\s+", " ", str(value).lower().replace("\\n", " ")).strip()
-
-
-def petunjuk_positif(pattern, text):
-    for match in re.finditer(pattern, text):
-        prefix = text[max(0, match.start() - 55) : match.start()]
-        if not re.search(
-            r"\b(?:bukan|tidak|non|dekat|dkt|sebelah|samping)\s+(?:\w+\s+){0,3}$", prefix
-        ):
-            return True
-    return False
-
-
-def tentukan_kondisi_bangunan(row):
-    kondisi = teks_fitur(row.get("kondisi", ""))
-    if kondisi in {"baru", "baru dibangun", "brand new"}:
-        return "baru"
-    if kondisi in {"lama", "bekas", "second", "butuh renovasi", "perlu renovasi"}:
-        return "lama"
-    text = " | ".join(teks_fitur(row.get(c, "")) for c in ["judul", "overview", "deskripsi"])
-    baru = petunjuk_positif(
-        r"\b(?:rumah\s+(?:brand\s+)?baru|bangunan\s+baru|baru\s+dibangun|brand\s+new|belum\s+pernah\s+dihuni)\b",
-        text,
-    )
-    lama = petunjuk_positif(
-        r"\b(?:rumah\s+(?:lama|bekas|second)|bangunan\s+(?:lama|tua)|butuh\s+renovasi|perlu\s+renovasi)\b",
-        text,
-    )
-    # Renovasi baru tidak berarti bangunan baru; konflik perlu pemeriksaan.
-    if baru == lama:
-        return "tidak diketahui"
-    return "baru" if baru else "lama"
-
-
-def tentukan_tipe_lingkungan(row):
-    text = " | ".join(
-        teks_fitur(row.get(c, "")) for c in ["lokasi", "judul", "overview", "deskripsi"]
-    )
-    kampung = petunjuk_positif(r"\b(?:kampung|perkampungan)\b", text)
-    perumahan = petunjuk_positif(
-        r"\b(?:perumahan|perum|cluster|klaster|komplek\s+perumahan|kompleks\s+perumahan)\b", text
-    )
-    if kampung == perumahan:
-        return "tidak diketahui"
-    return "kampung" if kampung else "perumahan"
-
-
 def tentukan_kpr(overview):
     teks = str(overview).strip()
     if teks in ("", "-"):
@@ -717,8 +665,6 @@ def main():
     #   Tidak           : overview ada tetapi tidak menyebut "KPR" (mis. hanya "Cash Keras")
     #   Tidak Diketahui : overview kosong / "-" (informasi cara pembayaran tidak tersedia)
     df["KPR"] = df["overview"].apply(tentukan_kpr)
-    df["kondisi bangunan"] = df.apply(tentukan_kondisi_bangunan, axis=1)
-    df["tipe lingkungan"] = df.apply(tentukan_tipe_lingkungan, axis=1)
 
     # lokasi -> tipe, kelurahan, kecamatan, wilayah
     hasil = [
@@ -762,8 +708,6 @@ def main():
             ("tipe_lokasi", "Tipe lokasi"),
             ("wilayah", "Wilayah"),
             ("KPR", "KPR"),
-            ("kondisi bangunan", "Kondisi bangunan"),
-            ("tipe lingkungan", "Tipe lingkungan"),
         ],
         start=3,
     ):

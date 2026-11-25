@@ -4,9 +4,9 @@ import re
 
 # Daftar file CSV yang akan digabungkan.
 files = [
-    "rumah123_surabaya_2024_audit.csv",
-    "rumah123_surabaya_2025_audit.csv",
-    "rumah123_surabaya_2026_audit.csv"
+    "rumah123_surabaya_2024.csv",
+    "rumah123_surabaya_2025.csv",
+    "rumah123_surabaya_2026.csv"
 ]
 
 dataframes = []
